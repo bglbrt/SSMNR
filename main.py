@@ -62,7 +62,7 @@ def main():
         worker.eval()
 
     elif args.mode == 'denoise':
-        worker.denoise(args.image_path)
+        worker.denoise(args.model, args.image_path)
 
 # run main function
 if __name__ == '__main__':

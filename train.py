@@ -9,6 +9,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torchvision.transforms as transforms
 
 # visualisation libraries
 import matplotlib.pyplot as plt
@@ -215,6 +216,8 @@ class TRAINER():
                     labels = labels.to(self.device)
                     masks = masks.to(self.device)
 
+                    print(inputs.shape)
+
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -299,7 +302,7 @@ class TRAINER():
         # set seed
         torch.manual_seed(self.seed)
 
-    def denoise(self, model, image_pth):
+    def denoise(self, model, image_path):
         '''
         Single image denoising function.
 
@@ -324,28 +327,65 @@ class TRAINER():
         model = self.load_model(self.model)
 
         # load weights
-        model = self.load_weights(self.model)
+        model = self.load_weights(model)
 
         # set model to eval function
         model.eval()
 
-        self.denoise_transforms = {'evaluation_in' : transforms.Compose([
-                                    transforms.ToTensor(),
-                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                                ]),
-                                'evaluation_out' : transforms.Compose([
-                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                                    transforms.ToPILImage()
-                                ])}
-
-        image = Image.open(image_pth)
+        image = Image.open(image_path)
         image.load()
 
         # convert grayscale images to RGB (three-channel)
         if image.mode == 'L':
             image.convert('RGB')
 
-        image = self.denoise_transforms['evaluation_in'](image)
+        width, height = image.size
+        pad_h = 64 - (width % 64)
+        pad_v = 64 - (height % 64)
 
-        for image_patch_in in l:
-            image_patch_out = self.eval(image_patch_in)
+        pad_h1, pad_h2 = pad_h // 2, pad_h - pad_h // 2
+        pad_v1, pad_v2 = pad_v // 2, pad_v - pad_v // 2
+
+        data = np.asarray(image)
+
+        self.denoise_transforms = {'evaluation_in' : transforms.Compose([
+                                    transforms.ToTensor(),
+                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                                    transforms.Pad(padding=(pad_h1, pad_v1, pad_h2, pad_v2), padding_mode='edge')
+                                ]),
+                                'evaluation_out' : transforms.Compose([
+                                    transforms.ToPILImage()
+                                ])}
+
+        data = self.denoise_transforms['evaluation_in'](data)
+
+        slide = 32
+
+        patches = data.unfold(1, 64, slide).unfold(2, 64, slide)
+
+        denoised_patches = torch.zeros_like(patches)
+
+        new_data = torch.zeros_like(data)
+        div = torch.zeros_like(data)
+
+        for i in range(patches.shape[1]):
+            for j in range(patches.shape[2]):
+                patch = patches[:, i, j, :, :]
+                denoised_patch = model(torch.unsqueeze(patch, 0)).squeeze()
+
+                new_data[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += denoised_patch[:, 2:-2, 2:-2]
+                div[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
+
+        new_data = new_data / div
+
+        #denoised_data = denoised_patches.reshape(3, height+pad_v, width+pad_h,)
+
+        # TEMPORARY
+        denoised_data = new_data[:, pad_v1:-pad_v2, pad_h1:-pad_h2]
+
+        for c in range(3):
+            denoised_data[c, :, :] = ([0.229, 0.224, 0.225][c] * denoised_data[c, :, :]) + [0.485, 0.456, 0.406][c]
+
+        denoised_image = self.denoise_transforms['evaluation_out'](denoised_data)
+
+        denoised_image.save(os.path.join('denoised', os.path.basename(image_path)))

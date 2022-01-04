@@ -9,7 +9,6 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.transforms as transforms
 
 # visualisation libraries
 import matplotlib.pyplot as plt
@@ -19,6 +18,7 @@ from data import *
 from utils import *
 from models import *
 
+# training, evaluation and images denoising class
 class TRAINER():
     '''
     Training and evaluation methods.
@@ -37,8 +37,11 @@ class TRAINER():
         self.data = args.data
         self.model = args.model
         self.mode = args.mode
+        self.images_path = args.images_path
+        self.slide = args.slide
         self.use_cuda = args.use_cuda
         self.from_pretrained = args.from_pretrained
+        self.weights = args.weights
         self.batch_size = args.batch_size
         self.epochs = args.epochs
         self.masking_method = args.masking_method
@@ -49,9 +52,6 @@ class TRAINER():
         self.wd = args.wd
         self.seed = args.seed
 
-        # add from dependencies
-        self.image_transforms = transforms
-
         # set device for GPU if GPU available
         if self.use_cuda and torch.cuda.is_available():
             self.device = torch.device("cuda:0")
@@ -61,7 +61,7 @@ class TRAINER():
         else:
             self.device = torch.device("cpu")
 
-    def load_model(self, model):
+    def load_model(self):
         '''
         Model loading function.
 
@@ -71,7 +71,8 @@ class TRAINER():
         '''
 
         # load model
-        model = initialize_model(model)
+        model = initialize_model(self.model)
+        model = model.to(self.device)
 
         # return model
         return model
@@ -87,6 +88,8 @@ class TRAINER():
         Returns:
             model: torchvision.model
                 - model with loaded weights
+            weights: str or None
+                - path to weights (.pth)
         '''
 
         # create directory to save model weights
@@ -95,8 +98,11 @@ class TRAINER():
 
         # load last weights if required
         if self.from_pretrained:
-            weights = torch.load('models/model.pth')
-            model.load_state_dict(weights)
+            try:
+                weights = torch.load(self.weights)
+                model.load_state_dict(weights)
+            except Exception as e:
+                raise Exception("Error! Argument from_pretrained was set to True but no weights were provided.")
 
         # return model
         return model
@@ -111,10 +117,10 @@ class TRAINER():
         '''
 
         # load train data
-        train_data = LOADER(os.path.join(self.data, 'train'), self.masking_method, self.window, self.ratio, self.sigma, self.image_transforms)
+        train_data = LOADER(os.path.join(self.data, 'train'), self.masking_method, self.window, self.ratio, self.sigma)
 
         # load validation data
-        validation_data = LOADER(os.path.join(self.data, 'validation'), self.masking_method ,self.window, self.ratio, self.sigma, self.image_transforms)
+        validation_data = LOADER(os.path.join(self.data, 'validation'), self.masking_method, self.window, self.ratio, self.sigma)
 
         # define training data loader
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
@@ -125,6 +131,7 @@ class TRAINER():
         # load dataloaders in dictionary
         data_loaders = {'train':train_loader, 'validation':validation_loader}
 
+        # return data loaders
         return data_loaders
 
     def train(self, model):
@@ -156,7 +163,7 @@ class TRAINER():
         time_start = time.time()
 
         # load model
-        model = self.load_model(self.model)
+        model = self.load_model()
 
         # load weights
         model = self.load_weights(model)
@@ -277,7 +284,7 @@ class TRAINER():
         time_end = time.time()
         time_training = time_end - time_start
         print(('#' * (30)))
-        print('Training complete in {:.0f}m {:.0f}s'.format(time_epoch // 60, time_epoch % 60))
+        print('Training complete in {:.0f}m {:.0f}s'.format(time_training // 60, time_training % 60))
 
         # load best model weights
         model.load_state_dict(current_weights)
@@ -289,29 +296,31 @@ class TRAINER():
         # print location of model weights
         print('Saved model to: ' + model_file)
 
+        print('Please run python main.py --mode denoise --images_path "path/to/image" --from_pretrained True --weights "'+str(model_file)+'" to denoise an image.')
+        print('#'*30)
+
         # return model and losses
         return model, losses
 
-    def eval(self):
+    def denoise(self, model):
         '''
-        '''
-
-        if not self.from_pretrained:
-            'Weights not provided!'
-
-        # set seed
-        torch.manual_seed(self.seed)
-
-    def denoise(self, model, image_path):
-        '''
-        Single image denoising function.
+        Denoising function for single image or directory of images.
 
         Arguments:
-            model:
+            model: torchvision.model
+                - model to train
         '''
 
         print('#'*30)
-        print('Initialising... \n')
+        print('Initialising...')
+
+        # check from_pretrained is set to True
+        if not self.from_pretrained:
+            'Please set from_pretrained argument to True.'
+
+        # check weights are provided
+        if not self.weights:
+            'Weights not provided! Please provide path to weights (*.pth) in weights argument.'
 
         # set seed
         torch.manual_seed(self.seed)
@@ -323,8 +332,11 @@ class TRAINER():
         # training start time
         time_start = time.time()
 
+        # initialise image processor
+        processer = PROCESSER()
+
         # load model
-        model = self.load_model(self.model)
+        model = self.load_model()
 
         # load weights
         model = self.load_weights(model)
@@ -332,60 +344,89 @@ class TRAINER():
         # set model to eval function
         model.eval()
 
-        image = Image.open(image_path)
-        image.load()
+        # check if self.images_path contains a single image or a directory of images
+        if os.path.isfile(self.images_path):
+            images_path = [self.images_path]
 
-        # convert grayscale images to RGB (three-channel)
-        if image.mode == 'L':
-            image.convert('RGB')
+        # check if self.images_path contains a single image or a directory of images
+        elif os.path.isdir(self.images_path):
+            images_path = [os.path.join(self.images_path, path) for path in os.listdir(self.images_path) if os.path.splitext(path)[-1] in ['.jpg', '.png']]
 
-        width, height = image.size
-        pad_h = 64 - (width % 64)
-        pad_v = 64 - (height % 64)
+        # initialise slide variable
+        slide = self.slide
 
-        pad_h1, pad_h2 = pad_h // 2, pad_h - pad_h // 2
-        pad_v1, pad_v2 = pad_v // 2, pad_v - pad_v // 2
+        print('Number of images found to process: %i \n' % len(images_path))
+        print('#'*30)
+        print('Beginning denoising... \n')
 
-        data = np.asarray(image)
+        # iterate over images
+        for image_path in images_path:
 
-        self.denoise_transforms = {'evaluation_in' : transforms.Compose([
-                                    transforms.ToTensor(),
-                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                                    transforms.Pad(padding=(pad_h1, pad_v1, pad_h2, pad_v2), padding_mode='edge')
-                                ]),
-                                'evaluation_out' : transforms.Compose([
-                                    transforms.ToPILImage()
-                                ])}
+            print('-'*30)
+            print('Starting image: %s' % image_path)
 
-        data = self.denoise_transforms['evaluation_in'](data)
+            # load image
+            image = Image.open(image_path)
+            image.load()
 
-        slide = 32
+            # compute image width and height
+            width, height = image.size
 
-        patches = data.unfold(1, 64, slide).unfold(2, 64, slide)
+            # split image into patches
+            pad_v1, pad_v2, pad_h1, pad_h2, patches = processer.split_image(image, slide)
 
-        denoised_patches = torch.zeros_like(patches)
+            # initialise new image array and sliding window counter
+            data = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
+            div = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
 
-        new_data = torch.zeros_like(data)
-        div = torch.zeros_like(data)
+            # compute mode output over all patches
+            for i in range(patches.shape[1]):
+                for j in range(patches.shape[2]):
 
-        for i in range(patches.shape[1]):
-            for j in range(patches.shape[2]):
-                patch = patches[:, i, j, :, :]
-                denoised_patch = model(torch.unsqueeze(patch, 0)).squeeze()
+                    # compute denoised patch
+                    denoised_patch = model(torch.unsqueeze(patches[:, i, j, :, :], 0)).squeeze()
 
-                new_data[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += denoised_patch[:, 2:-2, 2:-2]
-                div[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
+                    # add denoised patch to data array and update div array
+                    data[:, slide*i + 2:(slide*i)+64 - 2, slide*j + 2:(slide*j)+64 - 2] += denoised_patch[:, 2:-2, 2:-2]
+                    div[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
 
-        new_data = new_data / div
+            # divide values in data array by number of sliding windows per pixel
+            data = data / div
 
-        #denoised_data = denoised_patches.reshape(3, height+pad_v, width+pad_h,)
+            # remove padding
+            data = data[:, pad_v1:-pad_v2, pad_h1:-pad_h2]
 
-        # TEMPORARY
-        denoised_data = new_data[:, pad_v1:-pad_v2, pad_h1:-pad_h2]
+            # process image
+            denoised_image = processer.process_image(data)
 
-        for c in range(3):
-            denoised_data[c, :, :] = ([0.229, 0.224, 0.225][c] * denoised_data[c, :, :]) + [0.485, 0.456, 0.406][c]
+            # save image
+            output_path = os.path.join('denoised', os.path.basename(image_path))
+            denoised_image.save(output_path)
 
-        denoised_image = self.denoise_transforms['evaluation_out'](denoised_data)
+            print('Image denoised and saved to: %s' % output_path)
+            print('-'*30 + '\n')
 
-        denoised_image.save(os.path.join('denoised', os.path.basename(image_path)))
+        # print time since start of epoch
+        time_end = time.time()
+        time_denoising = time_end - time_start
+        print(('#' * (30)))
+        print('Denoising complete in {:.0f}m {:.0f}s'.format(time_denoising // 60, time_denoising % 60))
+
+    def eval(self, model):
+        '''
+        Evaluation function.
+
+        Arguments:
+            model: torchvision.model
+                - model to train
+
+        Returns:
+            ...
+        '''
+
+        if (not self.from_pretrained) or (not self.weights):
+            'Weights not provided! \
+            Please set from_pretrained argument to True and provide path to weights (*.pth) in weights argument.'
+
+        # set seed
+        torch.manual_seed(self.seed)

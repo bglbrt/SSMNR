@@ -6,34 +6,18 @@ import os
 # numerical and computer vision libraries
 import torch
 import numpy as np
-import torchvision.transforms as transforms
 from PIL import Image
 
-data_transforms = {
-    'train': transforms.Compose([
-                transforms.RandomCrop(64),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225])
-            ]),
-    'validation' : transforms.Compose([
-                transforms.RandomCrop(64),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ]),
-    'evaluation' : transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ])
-                }
+# dependencies
+from filters import *
 
+# data loading class for training
 class LOADER():
     '''
     Images loader.
     '''
 
-    def __init__(self, data, method, window, ratio, sigma, data_transforms):
+    def __init__(self, data, method, window, ratio, sigma):
         '''
         Initialization function.
 
@@ -50,20 +34,8 @@ class LOADER():
         self.sigma = sigma
 
         # add data transforms
-        self.data_transforms = {
-            'train': transforms.Compose([
-                        transforms.RandomCrop(64),
-                        transforms.RandomHorizontalFlip(),
-                        transforms.RandomVerticalFlip(),
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225])
-                    ]),
-            'validation' : transforms.Compose([
-                        transforms.RandomCrop(64),
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                        ])
-                               }
+        self.augmenter = AUGMENTER()
+        self.train_transforms = self.augmenter.get_train_transforms()
 
         # filter images and sort
         image_extensions = ('.png')
@@ -94,10 +66,9 @@ class LOADER():
 
         # compute width and height
         width, height = image.size
-        n_channels = 3
 
         # compute transforms
-        image = self.data_transforms['train'](image)
+        image = self.train_transforms(image)
 
         # convert to array
         image_as_array = np.asarray(image)
@@ -106,7 +77,7 @@ class LOADER():
         input, mask = self.get_mask(image_as_array)
 
         # compute label
-        label = image_as_array + np.random.normal(0, self.sigma, (n_channels, 64, 64))
+        label = image_as_array + np.random.normal(0, self.sigma, (3, 64, 64))
 
         # create dict with data
         data = {'input':input, 'label':label, 'mask':mask}
@@ -173,3 +144,94 @@ class LOADER():
 
         # return mask
         return masked_data, mask
+
+# data processing class for denoising
+class PROCESSER():
+    '''
+    Images processer.
+    '''
+
+    def __init__(self):
+        '''
+        Initialization function.
+        '''
+
+        # add data transforms
+        self.augmenter = AUGMENTER()
+        self.process_transforms = self.augmenter.get_process_transforms()
+
+    def split_image(self, image, slide):
+        '''
+        Function to split larger image for denoising function.
+
+        Argumnts:
+            image: PIL.Image.Image
+                - image to split for denoising
+            slide: int
+                - sliding window over images (must be between 1 and 64)
+
+        Returns:
+            patches: torch.Tensor
+                - splitted image into patches as torch Tensor
+            pad_v1: int
+                - right vertical padding
+            pad_v2: int
+                - left vertical padding
+            pad_h1: int
+                - right horizontal padding
+            pad_h2: int
+                - left horizontal padding
+        '''
+
+        # convert grayscale images to RGB (three-channel)
+        if image.mode == 'L':
+            image.convert('RGB')
+
+        # compute image width and height
+        width, height = image.size
+
+        # convert image to np.array
+        data = np.asarray(image)
+
+        # compute padding
+        pad_h, pad_v = max(4, 64 - (width % 64)), max(4, 64 - (height % 64))
+        pad_h1, pad_h2 = pad_h // 2, pad_h - pad_h // 2
+        pad_v1, pad_v2 = pad_v // 2, pad_v - pad_v // 2
+
+        # define transforms
+        denoise_transforms = self.augmenter.get_denoise_transforms((pad_h1, pad_v1, pad_h2, pad_v2))
+
+        # apply transforms
+        data = denoise_transforms(data)
+
+        # unfold tensor
+        patches = data.unfold(1, 64, slide).unfold(2, 64, slide)
+
+        # return padding and patches
+        return pad_v1, pad_v2, pad_h1, pad_h2, patches
+
+    def process_image(self, data):
+        '''
+        Function to split larger image for denoising function.
+
+        Argumnts:
+            data: np.array
+                - array containing raw denoised image
+
+        Returns:
+            image: PIL.Image.Image
+                - denoised and processed image
+        '''
+
+        # denormalise image
+        for c in range(3):
+            data[c, :, :] = ([0.229, 0.224, 0.225][c] * data[c, :, :]) + [0.485, 0.456, 0.406][c]
+
+        # define transforms
+        process_transforms = transforms.Compose([transforms.ToPILImage()])
+
+        # convert torch Tensor to PIL image
+        image = self.process_transforms(data)
+
+        # return image
+        return image

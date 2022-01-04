@@ -1,4 +1,4 @@
-# SSMNR -- RECVIS MVA Project 2021
+# SSMNR | RECVIS MVA Project 2021
 
 Image denoising is the task of removing noise from an image, which can be formulated as the task of separating the noise signal from the meaningful information in images. Traditionally, this has been addressed both by spatial domain methods and transfer domain methods. However, from around 2016 onwards, image denoising techniques based on neural networks have started to outperfom these methods, with CNN-based denoisers obtaining impressive results.\\
 

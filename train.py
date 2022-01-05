@@ -198,7 +198,7 @@ class TRAINER():
             print(('-' * (30)))
 
             if (epoch > 0) and (epoch % 50 == 0):
-                model_file = 'models/model_' + str(epoch) +'.pth'
+                model_file = 'models/model' + '_' + self.model + '_' + str(epoch) +'.pth'
                 torch.save(current_weights, model_file)
 
             # iterate over train and validation phases
@@ -223,8 +223,6 @@ class TRAINER():
                     labels = labels.to(self.device)
                     masks = masks.to(self.device)
 
-                    print(inputs.shape)
-
                     # zero the parameter gradients
                     optimizer.zero_grad()
 
@@ -235,7 +233,7 @@ class TRAINER():
                         outputs = model(inputs)
 
                         # compute loss function
-                        loss = loss_function(outputs, labels)
+                        loss = loss_function(outputs * mask, labels * mask)
 
                         # backward
                         if phase == 'train':
@@ -290,7 +288,7 @@ class TRAINER():
         model.load_state_dict(current_weights)
 
         # save last model
-        model_file = 'models/model.pth'
+        model_file = 'models/model' + '_' + self.model + '.pth'
         torch.save(current_weights, model_file)
 
         # print location of model weights
@@ -379,12 +377,17 @@ class TRAINER():
             data = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
             div = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
 
+            # put output image on device
+            data = data.to(self.device)
+            div = div.to(self.device)
+
             # compute mode output over all patches
             for i in range(patches.shape[1]):
                 for j in range(patches.shape[2]):
 
                     # compute denoised patch
-                    denoised_patch = model(torch.unsqueeze(patches[:, i, j, :, :], 0)).squeeze()
+                    input = torch.unsqueeze(patches[:, i, j, :, :], 0).to(self.device)
+                    denoised_patch = model(input).squeeze()
 
                     # add denoised patch to data array and update div array
                     data[:, slide*i + 2:(slide*i)+64 - 2, slide*j + 2:(slide*j)+64 - 2] += denoised_patch[:, 2:-2, 2:-2]

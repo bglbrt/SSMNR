@@ -15,6 +15,8 @@ parser.add_argument('--data', type=str, default='data', metavar='D',
                     help="Folder where training and testing data is located (default: data).")
 parser.add_argument('--model', type=str, default='N2V', metavar='M',
                     help='Name of model for noise removal (default: N2V).')
+parser.add_argument('--input_size', type=int, default=64, metavar='IS',
+                    help='Model patches input size (default: 64).')
 parser.add_argument('--mode', type=str, default='train', metavar='MD',
                     help='Training, denoising or evaluation mode (default: train).')
 parser.add_argument('--images_path', type=str, default=None, metavar='IP',
@@ -35,8 +37,8 @@ parser.add_argument('--masking_method', type=str, default="UPS", metavar='MM',
                     help='Masking method (default: UPS)')
 parser.add_argument('--window', type=int, default=20, metavar='WI',
                     help='Window for masking method (default: 20)')
-parser.add_argument('--ratio', type=float, default=0.05, metavar='R',
-                    help='Ratio for masking method (default: 0.05)')
+parser.add_argument('--ratio', type=float, default=0.02, metavar='R',
+                    help='Ratio for masking method (default: 0.02)')
 parser.add_argument('--sigma', type=float, default=1, metavar='S',
                     help='Noise standard deviation for creating labels (default: 1)')
 parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',

@@ -6,7 +6,7 @@ import os
 # numerical and computer vision libraries
 import torchvision.transforms as transforms
 
-class AUGMENTER():
+class AUGMENTER(input_size):
     '''
     Images augmenter / processer.
     '''
@@ -15,7 +15,7 @@ class AUGMENTER():
         '''
         Initialization function.
         '''
-        pass
+        self.input_size = input_size
 
     def get_train_transforms(self):
         '''
@@ -23,7 +23,7 @@ class AUGMENTER():
 
         # initialise train transforms
         train_transforms = transforms.Compose([
-                    transforms.RandomCrop(64),
+                    transforms.RandomCrop(self.input_size),
                     transforms.RandomHorizontalFlip(),
                     transforms.RandomVerticalFlip(),
                     transforms.ToTensor(),
@@ -39,7 +39,7 @@ class AUGMENTER():
 
         # initialise train transforms
         validation_transforms = transforms.Compose([
-                    transforms.RandomCrop(64),
+                    transforms.RandomCrop(self.input_size),
                     transforms.ToTensor(),
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                     ])

@@ -36,6 +36,7 @@ class TRAINER():
         # add from parser
         self.data = args.data
         self.model = args.model
+        self.input_size = args.input_size
         self.mode = args.mode
         self.images_path = args.images_path
         self.slide = args.slide
@@ -117,10 +118,10 @@ class TRAINER():
         '''
 
         # load train data
-        train_data = LOADER(os.path.join(self.data, 'train'), self.masking_method, self.window, self.ratio, self.sigma)
+        train_data = LOADER(os.path.join(self.data, 'train'), self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
 
         # load validation data
-        validation_data = LOADER(os.path.join(self.data, 'validation'), self.masking_method, self.window, self.ratio, self.sigma)
+        validation_data = LOADER(os.path.join(self.data, 'validation'), self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
 
         # define training data loader
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
@@ -233,7 +234,17 @@ class TRAINER():
                         outputs = model(inputs)
 
                         # compute loss function
-                        loss = loss_function(outputs * mask, labels * mask)
+                        loss = loss_function(outputs * masks, labels * masks)
+
+                        im = (labels * (masks)).detach().numpy()
+                        for i in range(self.batch_size):
+                            imi = im[i, :, :, :].squeeze()
+                            for c in range(3):
+                                imi[c, :, :] = imi[c, :, :] * 255
+                            imi = np.transpose(imi, (1, 2, 0))
+                            print(imi.shape)
+                            imi = Image.fromarray(imi.astype(np.uint8))
+                            imi.save('denoised/lala'+str(i)+'.jpg')
 
                         # backward
                         if phase == 'train':
@@ -331,7 +342,7 @@ class TRAINER():
         time_start = time.time()
 
         # initialise image processor
-        processer = PROCESSER()
+        processer = PROCESSER(self.input_size)
 
         # load model
         model = self.load_model()
@@ -390,8 +401,8 @@ class TRAINER():
                     denoised_patch = model(input).squeeze()
 
                     # add denoised patch to data array and update div array
-                    data[:, slide*i + 2:(slide*i)+64 - 2, slide*j + 2:(slide*j)+64 - 2] += denoised_patch[:, 2:-2, 2:-2]
-                    div[:, slide*i + 2:(slide*i)+64 -2, slide*j + 2:(slide*j)+64 - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
+                    data[:, slide*i + 2:(slide*i)+self.input_size - 2, slide*j + 2:(slide*j)+self.input_size - 2] += denoised_patch[:, 2:-2, 2:-2]
+                    div[:, slide*i + 2:(slide*i)+self.input_size -2, slide*j + 2:(slide*j)+self.input_size - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
 
             # divide values in data array by number of sliding windows per pixel
             data = data / div

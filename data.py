@@ -2,6 +2,7 @@
 
 # os libraries
 import os
+import copy
 
 # numerical and computer vision libraries
 import torch
@@ -17,7 +18,7 @@ class LOADER():
     Images loader.
     '''
 
-    def __init__(self, data, method, window, ratio, sigma):
+    def __init__(self, data, method, input_size, window, ratio, sigma):
         '''
         Initialization function.
 
@@ -29,12 +30,13 @@ class LOADER():
         # add from arguments
         self.data_path = data
         self.method = method
+        self.input_size = input_size
         self.window = window
         self.ratio = ratio
         self.sigma = sigma
 
         # add data transforms
-        self.augmenter = AUGMENTER()
+        self.augmenter = AUGMENTER(self.input_size)
         self.train_transforms = self.augmenter.get_train_transforms()
 
         # filter images and sort
@@ -73,14 +75,11 @@ class LOADER():
         # convert to array
         image_as_array = np.asarray(image)
 
-        # compute mask
-        input, mask = self.get_mask(image_as_array)
-
         # compute label
-        label = image_as_array + np.random.normal(0, self.sigma, (3, 64, 64))
+        label = image_as_array + np.random.normal(0, self.sigma, (3, self.input_size, self.input_size))
 
-        # create dict with data
-        data = {'input':input, 'label':label, 'mask':mask}
+        # compute mask
+        input, mask = self.get_mask(copy.deepcopy(label))
 
         # return data
         return input, label, mask
@@ -113,7 +112,7 @@ class LOADER():
         '''
 
         # get number of pixels to mask
-        n_masked_pixels = int(4096 * self.ratio)
+        n_masked_pixels = int(self.input_size * self.input_size * self.ratio)
 
         # initialise masked data
         masked_data = data
@@ -122,12 +121,12 @@ class LOADER():
         mask = np.zeros(data.shape)
 
         # randomly select indices to mask
-        masked_x_indices = np.random.choice(data.shape[0], n_masked_pixels, replace=True)
-        masked_y_indices = np.random.choice(data.shape[1], n_masked_pixels, replace=True)
+        masked_x_indices = np.random.choice(data.shape[1], n_masked_pixels, replace=True)
+        masked_y_indices = np.random.choice(data.shape[2], n_masked_pixels, replace=True)
         masked_indices = [(x, y) for x, y in zip(masked_x_indices, masked_y_indices)]
 
         # create mask
-        mask[masked_x_indices, masked_y_indices] = 1.0
+        mask[:, masked_x_indices, masked_y_indices] = 1.0
 
         # mask pixels in every channel
         for c in range(data.shape[2]):
@@ -138,7 +137,9 @@ class LOADER():
                 pass
 
             elif self.method == 'G':
-                random_noise = np.random.normal(0, 10, n_masked_pixels)
+                mean = np.mean(data[:, :, c], axis=(0, 1))
+                std = np.std(data[:, :, c], axis=(0, 1))
+                random_noise = np.random.normal(mean, std, n_masked_pixels)
                 for i, (x, y) in enumerate(masked_indices):
                     masked_data[x, y, c] += random_noise[i]
 
@@ -151,13 +152,16 @@ class PROCESSER():
     Images processer.
     '''
 
-    def __init__(self):
+    def __init__(self, input_size):
         '''
         Initialization function.
         '''
 
+        # add from arguments
+        self.input_size = input_size
+
         # add data transforms
-        self.augmenter = AUGMENTER()
+        self.augmenter = AUGMENTER(self.input_size)
         self.process_transforms = self.augmenter.get_process_transforms()
 
     def split_image(self, image, slide):
@@ -168,7 +172,7 @@ class PROCESSER():
             image: PIL.Image.Image
                 - image to split for denoising
             slide: int
-                - sliding window over images (must be between 1 and 64)
+                - sliding window over images (must be between 1 and input_size-4)
 
         Returns:
             patches: torch.Tensor
@@ -194,7 +198,7 @@ class PROCESSER():
         data = np.asarray(image)
 
         # compute padding
-        pad_h, pad_v = max(4, 64 - (width % 64)), max(4, 64 - (height % 64))
+        pad_h, pad_v = max(4, self.input_size - (width % self.input_size)), max(4, self.input_size - (height % self.input_size))
         pad_h1, pad_h2 = pad_h // 2, pad_h - pad_h // 2
         pad_v1, pad_v2 = pad_v // 2, pad_v - pad_v // 2
 
@@ -205,7 +209,7 @@ class PROCESSER():
         data = denoise_transforms(data)
 
         # unfold tensor
-        patches = data.unfold(1, 64, slide).unfold(2, 64, slide)
+        patches = data.unfold(1, self.input_size, slide).unfold(2, self.input_size, slide)
 
         # return padding and patches
         return pad_v1, pad_v2, pad_h1, pad_h2, patches

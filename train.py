@@ -6,6 +6,7 @@ import copy
 import time
 
 # numerical and computer vision libraries
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -37,13 +38,17 @@ class TRAINER():
         self.data = args.data
         self.model = args.model
         self.input_size = args.input_size
+        self.n_feat = args.n_feat
         self.mode = args.mode
+        self.weights_init_method = args.weights_init_method
         self.images_path = args.images_path
         self.slide = args.slide
         self.use_cuda = args.use_cuda
         self.from_pretrained = args.from_pretrained
         self.weights = args.weights
+        self.loss = args.loss
         self.batch_size = args.batch_size
+        self.steps_per_epoch = args.steps_per_epoch
         self.epochs = args.epochs
         self.masking_method = args.masking_method
         self.window = args.window
@@ -72,7 +77,7 @@ class TRAINER():
         '''
 
         # load model
-        model = initialize_model(self.model)
+        model = initialize_model(self.model, self.n_feat)
         model = model.to(self.device)
 
         # return model
@@ -89,8 +94,6 @@ class TRAINER():
         Returns:
             model: torchvision.model
                 - model with loaded weights
-            weights: str or None
-                - path to weights (.pth)
         '''
 
         # create directory to save model weights
@@ -105,6 +108,31 @@ class TRAINER():
             except Exception as e:
                 raise Exception("Error! Argument from_pretrained was set to True but no weights were provided.")
 
+        # initialise them otherwise
+        else:
+            # disable gradients
+            with torch.no_grad():
+
+                # initialise weights with a gaussian distribution
+                if self.weights_init_method == 'normal':
+                    for m in model.modules():
+                        if isinstance(m, nn.Conv2d):
+                            nn.init.normal_(m.weight.data)
+                            m.bias.data.zero_()
+
+                # initialise weights following 'Understanding the difficulty of training deep feedforward neural networks'
+                elif self.weights_init_method == 'xavier':
+                    for m in model.modules():
+                        if isinstance(m, nn.Conv2d):
+                            nn.init.xavier_normal_(m.weight.data)
+                            m.bias.data.zero_()
+
+                elif self.weights_init_method == 'kaiming':
+                    for m in model.modules():
+                        if isinstance(m, nn.Conv2d):
+                            nn.init.kaiming_normal_(m.weight.data)
+                            m.bias.data.zero_()
+
         # return model
         return model
 
@@ -118,16 +146,16 @@ class TRAINER():
         '''
 
         # load train data
-        train_data = LOADER(os.path.join(self.data, 'train'), self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
+        train_data = LOADER(os.path.join(self.data, 'train'), 'train', self.batch_size, self.steps_per_epoch, self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
 
         # load validation data
-        validation_data = LOADER(os.path.join(self.data, 'validation'), self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
+        validation_data = LOADER(os.path.join(self.data, 'validation'), 'validation', self.batch_size, self.steps_per_epoch, self.masking_method, self.input_size, self.window, self.ratio, self.sigma)
 
         # define training data loader
-        train_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=True, num_workers=0)
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=True, num_workers=4)
 
         # define validation data loader
-        validation_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        validation_loader = torch.utils.data.DataLoader(train_data, batch_size=self.batch_size, shuffle=True, num_workers=4)
 
         # load dataloaders in dictionary
         data_loaders = {'train':train_loader, 'validation':validation_loader}
@@ -166,14 +194,23 @@ class TRAINER():
         # load model
         model = self.load_model()
 
+        print('Model architecture:')
+        print(model)
+        print(' '*30)
+
         # load weights
         model = self.load_weights(model)
 
         # set loss function
-        loss_function = nn.MSELoss()
+        if self.loss == 'L1':
+            loss_function = nn.L1Loss()
+        elif self.loss == 'L2':
+            loss_function = nn.MSELoss()
+        elif self.loss == 'Huber':
+            loss_function = nn.HuberLoss()
 
         # set optimizer
-        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd)
+        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.99])
 
         # load data
         data_loaders = self.load_data()
@@ -183,6 +220,9 @@ class TRAINER():
 
         # initialise weights
         current_weights = copy.deepcopy(model.state_dict())
+
+        # initialise past validation losses
+        past_validation_losses = [np.inf]*10
 
         print('#'*30)
         print('Starting training\n')
@@ -198,7 +238,7 @@ class TRAINER():
             print('Starting epoch {}/{}'.format(epoch+1, self.epochs))
             print(('-' * (30)))
 
-            if (epoch > 0) and (epoch % 50 == 0):
+            if (epoch > 0) and (epoch % 10 == 0):
                 model_file = 'models/model' + '_' + self.model + '_' + str(epoch) +'.pth'
                 torch.save(current_weights, model_file)
 
@@ -236,16 +276,6 @@ class TRAINER():
                         # compute loss function
                         loss = loss_function(outputs * masks, labels * masks)
 
-                        im = (labels * (masks)).detach().numpy()
-                        for i in range(self.batch_size):
-                            imi = im[i, :, :, :].squeeze()
-                            for c in range(3):
-                                imi[c, :, :] = imi[c, :, :] * 255
-                            imi = np.transpose(imi, (1, 2, 0))
-                            print(imi.shape)
-                            imi = Image.fromarray(imi.astype(np.uint8))
-                            imi.save('denoised/lala'+str(i)+'.jpg')
-
                         # backward
                         if phase == 'train':
                             loss.backward()
@@ -266,6 +296,26 @@ class TRAINER():
 
                 elif phase == 'validation':
                     print('Validat. phase | Loss: {:.5f}'.format(running_loss))
+
+                    # change learning rate
+                    past_validation_losses.append(running_loss)
+                    past_validation_losses.pop(0)
+
+                    # check if validation loss is not decreasing anymore
+                    if all(i <= past_validation_losses[-1] for i in past_validation_losses):
+
+                        # update learning rate
+                        self.lr = self.lr / 2
+
+                        # update optimizer
+                        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.99])
+
+                        print('*'*30)
+                        print('Learning rate updated to: {:.5f}'.format(self.lr))
+                        print('*'*30)
+
+                        # reset past validation losses
+                        past_validation_losses = [np.inf]*10
 
                     # update current weights
                     current_weights = copy.deepcopy(model.state_dict())
@@ -381,16 +431,17 @@ class TRAINER():
             # compute image width and height
             width, height = image.size
 
+            # define chop for sliding
+            chop = (self.input_size - slide) // 2
+
             # split image into patches
-            pad_v1, pad_v2, pad_h1, pad_h2, patches = processer.split_image(image, slide)
+            pad_hl, pad_hr, pad_vt, pad_vb, patches = processer.split_image(image, slide, chop)
 
             # initialise new image array and sliding window counter
-            data = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
-            div = torch.zeros((3, height+pad_v1+pad_v1, width+pad_h1+pad_h1))
+            data = torch.zeros((3, height+pad_vt+pad_vb, width+pad_hl+pad_hr))
 
             # put output image on device
             data = data.to(self.device)
-            div = div.to(self.device)
 
             # compute mode output over all patches
             for i in range(patches.shape[1]):
@@ -401,14 +452,10 @@ class TRAINER():
                     denoised_patch = model(input).squeeze()
 
                     # add denoised patch to data array and update div array
-                    data[:, slide*i + 2:(slide*i)+self.input_size - 2, slide*j + 2:(slide*j)+self.input_size - 2] += denoised_patch[:, 2:-2, 2:-2]
-                    div[:, slide*i + 2:(slide*i)+self.input_size -2, slide*j + 2:(slide*j)+self.input_size - 2] += torch.ones_like(denoised_patch)[:, 2:-2, 2:-2]
-
-            # divide values in data array by number of sliding windows per pixel
-            data = data / div
+                    data[:, slide*i + chop:(slide*i)+self.input_size - chop, slide*j + chop:(slide*j)+self.input_size - chop] += denoised_patch[:, chop:-chop, chop:-chop]
 
             # remove padding
-            data = data[:, pad_v1:-pad_v2, pad_h1:-pad_h2]
+            data = data[:, pad_vt:-pad_vb, pad_hl:-pad_hr]
 
             # process image
             denoised_image = processer.process_image(data)

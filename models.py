@@ -67,25 +67,27 @@ class N2V(nn.Module):
     N2V model.
     '''
 
-    def __init__(self):
+    def __init__(self, n_feat):
         '''
         Initialization function.
         '''
 
         super(N2V, self).__init__()
 
+        self.n_feat = n_feat
+
         #########
         # ENCODER
 
         # N2V U-NET encoding in block
-        self.encode_block_in = self._encode_block_in()
+        self.encode_block_in = self._encode_block_in(1 * self.n_feat)
 
         # N2V U-NET encoding blocks
-        self.encode_block_1 = self._encode_block()
-        self.encode_block_2 = self._encode_block()
+        self.encode_block_1 = self._encode_block(1 * self.n_feat)
+        self.encode_block_2 = self._encode_block(2 * self.n_feat)
 
         # N2V U-NET encoding out block
-        self.encode_block_out = self._encode_block_out()
+        self.encode_block_out = self._encode_block_out(4 * self.n_feat)
 
         #########
         # DECODER
@@ -94,20 +96,19 @@ class N2V(nn.Module):
         self.decode_block_up = self._decode_block_up()
 
         # N2V U-NET decoding in block
-        self.decode_block_in = self._decode_block_in()
+        self.decode_block_in = self._decode_block_in(8 * self.n_feat, 2 * self.n_feat)
 
         # N2V U-NET decoding blocks
-        self.decode_block_1 = self._decode_block()
-        self.decode_block_2 = self._decode_block()
+        self.decode_block_1 = self._decode_block(4 * self.n_feat, 1 * self.n_feat)
 
         # N2V U-NET decoding out block
-        self.decode_block_out = self._decode_block_out()
+        self.decode_block_out = self._decode_block_out(2 * self.n_feat)
 
         ########
         # OUTPUT
 
         # N2V U-NET output block
-        self.output_block = self._output_block()
+        self.output_block = self._output_block(self.n_feat)
 
     def forward(self, x):
         '''
@@ -140,20 +141,18 @@ class N2V(nn.Module):
 
         # N2V U-NET decoding up-sampling block
         upsample = self.decode_block_up(pool_out)
-        concat_up = torch.cat((upsample, pool2), dim=1)
+        concat_up = torch.cat((upsample, pool1), dim=1)
 
         # N2V U-NET decoding in block
         upsample_in = self.decode_block_in(concat_up)
-        concat_in = torch.cat((upsample_in, pool1), dim=1)
+        concat_in = torch.cat((upsample_in, pool_in), dim=1)
 
         # N2V U-NET decoding blocks
         upsample_1 = self.decode_block_1(concat_in)
-        concat_1 = torch.cat((upsample_1, pool_in), dim=1)
-        upsample_2 = self.decode_block_2(concat_1)
-        concat_2 = torch.cat((upsample_2, x), dim=1)
+        concat_1 = torch.cat((upsample_1, x), dim=1)
 
         # N2V U-NET decoding out block
-        x = self.decode_block_out(concat_2)
+        x = self.decode_block_out(concat_1)
 
         ########
         # OUTPUT
@@ -164,16 +163,16 @@ class N2V(nn.Module):
         # return x
         return x.double()
 
-    def _encode_block_in(self):
+    def _encode_block_in(self, n_feat):
         '''
         N2V U-NET encoding in block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(3, 32, 3, stride=1, padding=1),
+            nn.Conv2d(3, n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(32, 32, 3, padding=1),
+            nn.Conv2d(n_feat, n_feat, 3, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.MaxPool2d(2)
         )
@@ -181,14 +180,16 @@ class N2V(nn.Module):
         # return block
         return block
 
-    def _encode_block(self):
+    def _encode_block(self, n_feat):
         '''
         N2V U-NET encoding block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(32, 32, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat, 2 * n_feat, 3, stride=1, padding=1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(2 * n_feat, 2 * n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.MaxPool2d(2)
         )
@@ -196,14 +197,14 @@ class N2V(nn.Module):
         # return block
         return block
 
-    def _encode_block_out(self):
+    def _encode_block_out(self, n_feat):
         '''
         N2V U-NET encoding out block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(32, 32, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat, 2 * n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True)
         )
 
@@ -223,16 +224,16 @@ class N2V(nn.Module):
         # return block
         return block
 
-    def _decode_block_in(self):
+    def _decode_block_in(self, n_feat, n_feat_concat):
         '''
         N2V U-NET decoding in block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(64, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat + n_feat_concat, n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(64, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat, int(n_feat / 2), 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.Upsample(scale_factor=2, mode="nearest")
         )
@@ -240,16 +241,16 @@ class N2V(nn.Module):
         # return block
         return block
 
-    def _decode_block(self):
+    def _decode_block(self, n_feat, n_feat_concat):
         '''
         N2V U-NET decoding block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(96, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat + n_feat_concat, n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(64, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat, int(n_feat / 2), 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.Upsample(scale_factor=2, mode="nearest")
         )
@@ -257,34 +258,34 @@ class N2V(nn.Module):
         # return block
         return block
 
-    def _decode_block_out(self):
+    def _decode_block_out(self, n_feat):
         '''
         N2V U-NET decoding out block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(64 + 3, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat + 3, n_feat, 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(64, 64, 3, stride=1, padding=1),
+            nn.Conv2d(n_feat, int(n_feat / 2), 3, stride=1, padding=1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True)
         )
 
         # return block
         return block
 
-    def _output_block(self):
+    def _output_block(self, n_feat):
         '''
         N2V U-NET output block.
         '''
 
         # initialise block
         block = nn.Sequential(
-            nn.Conv2d(64, 64, 1),
+            nn.Conv2d(n_feat, n_feat, 1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(94, 64, 1),
+            nn.Conv2d(n_feat, n_feat, 1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(64, 3, 1)
+            nn.Conv2d(n_feat, 3, 1)
         )
 
         # return block
@@ -528,9 +529,11 @@ class SSDN(nn.Module):
         # return block
         return block
 
-# define function to initialise transformer model
-def initialize_model(model_name):
+# function to initialise transformer model
+def initialize_model(model_name, n_feat):
     '''
+    Model initialization.
+
     Arguments:
         model_name: str
             - name of model
@@ -550,7 +553,7 @@ def initialize_model(model_name):
     elif model_name == 'N2V':
 
         # initialise N2V
-        model = N2V()
+        model = N2V(n_feat)
 
     # SSDN model
     elif model_name == 'SSDN':

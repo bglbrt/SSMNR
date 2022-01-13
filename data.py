@@ -117,7 +117,7 @@ class LOADER():
         '''
 
         # return number of images
-        return self.iter
+        return np.min([self.iter, len(self.paths)])
 
     def get_mask(self, data):
         '''
@@ -261,11 +261,12 @@ class PROCESSER():
         for c in range(3):
             data[c, :, :] = ([0.229, 0.224, 0.225][c] * data[c, :, :]) + [0.485, 0.456, 0.406][c]
 
-        # define transforms
-        process_transforms = transforms.Compose([transforms.ToPILImage(mode='RGB')])
+        # convert to numpu array
+        data = np.clip((data * 255).cpu().detach().numpy(), a_min=0, a_max=255).astype('uint8')
+        data = np.transpose(data, (1,2,0))
 
-        # convert torch Tensor to PIL image
-        image = self.process_transforms(data)
+        # convert to PIL image
+        image = Image.fromarray(data, 'RGB')
 
         # return image
         return image

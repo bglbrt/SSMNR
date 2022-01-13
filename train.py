@@ -201,6 +201,10 @@ class TRAINER():
         # load weights
         model = self.load_weights(model)
 
+        model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+        params = sum([np.prod(p.size()) for p in model_parameters])
+        print(params)
+
         # set loss function
         if self.loss == 'L1':
             loss_function = nn.L1Loss()
@@ -210,7 +214,7 @@ class TRAINER():
             loss_function = nn.HuberLoss()
 
         # set optimizer
-        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.99])
+        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.999])
 
         # load data
         data_loaders = self.load_data()
@@ -308,7 +312,7 @@ class TRAINER():
                         self.lr = self.lr / 2
 
                         # update optimizer
-                        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.99])
+                        optimizer = optim.RAdam(model.parameters(), lr=self.lr, weight_decay=self.wd, betas=[0.9, 0.999])
 
                         print('*'*30)
                         print('Learning rate updated to: {:.5f}'.format(self.lr))

@@ -38,7 +38,7 @@ parser.add_argument('--loss', type=str, default='L2', metavar='L',
 parser.add_argument('--batch_size', type=int, default=64, metavar='B',
                     help='Batch size for training data (default: 64)')
 parser.add_argument('--steps_per_epoch', type=int, default=100, metavar='SE',
-                    help='Number of steps per epoch for training (default: 200)')
+                    help='Number of steps per epoch for training (default: 100)')
 parser.add_argument('--epochs', type=int, default=400, metavar='E',
                     help='Number of epochs to train the model (default: 400)')
 parser.add_argument('--masking_method', type=str, default="UPS", metavar='MM',
@@ -51,7 +51,7 @@ parser.add_argument('--sigma', type=float, default=25, metavar='S',
                     help='Noise standard deviation for creating labels (default: 25)')
 parser.add_argument('--lr', type=float, default=4e-4, metavar='LR',
                     help='Learning rate (default: 1e-4)')
-parser.add_argument('--wd', type=float, default=1e-5, metavar='WD',
+parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                     help='Weight decay for AdamW optimiser (default: 0)')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='Random seed (default: 1)')

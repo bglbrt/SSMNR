@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 
 # dependencies
+from utils import *
 from filters import *
 
 # data loading class for training
@@ -18,44 +19,73 @@ class LOADER():
     Images loader.
     '''
 
-    def __init__(self, data, phase, batch_size, steps_per_epoch, method, input_size, window, ratio, sigma):
+    def __init__(self, data, phase, n_channels, batch_size, steps_per_epoch, input_size, method, window, ratio, noise_type, sigma):
         '''
         Initialization function.
 
         Arguments:
-            args: parser.args
-                - parser arguments (from main.py)
+            data: str
+                - path to folder containing training and validation data
+            phase: str
+                - training or validation phase
+            n_channels: int
+                - number of channels in images (3 for RGB; 1 for grayscale)
+            batch_size: int
+                - number of images per batch
+            steps_per_epoch: int
+                - number of batches in one epoch
+            method: str
+                -  blind-spot masking method
+            input_size: int
+                - size of patches
+            window: int
+                - window for blind-spot masking method in UPS
+            ratio: float
+                - ratio for number of blind-spot pixels in patch
+            noise_type: str
+                - noise type from Gaussian (G), Poisson (P) and Impulse (I)
+            sigma: int
+                - noise parameter for creating labels - depends on distribution
         '''
 
         # add from arguments
-        self.data_path = data
+        self.data = data
         self.phase = phase
+        self.n_channels = n_channels
         self.batch_size = batch_size
         self.steps_per_epoch = steps_per_epoch
-        self.method = method
         self.input_size = input_size
+        self.method = method
         self.window = window
         self.ratio = ratio
+        self.noise_type = noise_type
         self.sigma = sigma
 
-        # set number of items in loader
+        # set number of items in each batch for training
         if self.phase == 'train':
             self.iter = self.steps_per_epoch * self.batch_size
 
+        # set number of items in each batch for validation
         elif self.phase == 'validation':
             self.iter = int(0.2 * self.steps_per_epoch * self.batch_size)
 
-        # add data transforms
+        # define AUGMENTER for data transforms
         self.augmenter = AUGMENTER(self.input_size)
+
+        # define normalisation transforms
         self.normalize_transforms = self.augmenter.get_normalize_transforms()
+
+        # define train and validation transforms
         if phase == 'train':
             self.transforms = self.augmenter.get_train_transforms()
         elif phase == 'validation':
             self.transforms = self.augmenter.get_validation_transforms()
 
-        # filter images and sort
-        image_extensions = ('.png', '.jpg', '.jpeg')
-        paths = [i for i in os.listdir(self.data_path) if i.lower().endswith(image_extensions)]
+        # get images extensions
+        image_extensions = get_extensions()
+
+        # define paths to images
+        paths = [i for i in os.listdir(self.data) if i.lower().endswith(image_extensions)]
         paths.sort(key=lambda x: os.path.splitext(x)[0])
         self.paths = paths
 
@@ -73,12 +103,17 @@ class LOADER():
         '''
 
         # load image
-        image = Image.open(os.path.join(self.data_path, self.paths[i]))
+        image = Image.open(os.path.join(self.data, self.paths[i]))
         image.load()
 
-        # convert grayscale images to RGB (three-channel)
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        # convert images
+        if self.n_channels == 3:
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+
+        elif self.n_channels == 1:
+            if image.mode != 'L':
+                image = image.convert('L')
 
         # compute transforms
         image = self.transforms(image)
@@ -86,26 +121,41 @@ class LOADER():
         # convert image to array
         image = np.array(image)
 
-        # add random noise to label
-        noise = np.rint(np.random.normal(0, self.sigma, (self.input_size, self.input_size, 3))).astype(np.uint8)
-        label = image + noise
+        # add random Gaussian noise to label
+        if self.noise_type == 'G':
+            noise = np.rint(np.random.normal(0, self.sigma, (self.input_size, self.input_size, self.n_channels)))
+            label = image + noise
+
+        # add random Poisson noise to label
+        elif self.noise_type == 'P':
+            noise = np.rint(np.random.poisson(self.sigma, (self.input_size, self.input_size, self.n_channels)))
+            label = image + noise
+
+        # add random Impulse noise to label
+        elif self.noise_type == 'I':
+            noise = np.rint(np.random.uniform(0, 255, (self.input_size, self.input_size, self.n_channels)))
+            mask = np.random.binomial(1, self.sigma, (self.input_size, self.input_size, self.n_channels))
+            label = image
+            label[mask] = noise[mask]
+
+        # raise error if noise type of noise not implemented
+        else:
+            raise NotImplementedError('Noise type not implemented: please use either G (Gaussian), P (Poisson) or I (Impulse)')
 
         # compute mask
         input, mask = self.get_mask(label)
 
-        # convert back to PIL image
-        input = Image.fromarray(input, 'RGB')
-        label = Image.fromarray(label, 'RGB')
-
         # normalize
+        input = torch.from_numpy(input.transpose((2, 0, 1))).contiguous().div(255)
+        mask = torch.from_numpy(mask.transpose((2, 0, 1))).contiguous()
+        label = torch.from_numpy(label.transpose((2, 0, 1))).contiguous().div(255)
+
+        # normalize input and label
         input = self.normalize_transforms(input)
         label = self.normalize_transforms(label)
 
-        # convert mask to tensor
-        mask =  torch.tensor(mask).permute(2, 0, 1)
-
-        # return data
-        return input, label, mask
+        # return data as floats or as int
+        return input.float(), label.float(), mask
 
     def __len__(self):
         '''
@@ -128,7 +178,7 @@ class LOADER():
                 - input image as array (to be masked)
 
         Returns:
-            data: numpy.ndarray
+            masked_data: numpy.ndarray
                 - masked image as array
             mask: np.array
                 - mask
@@ -154,7 +204,7 @@ class LOADER():
         # mask pixels in every channel
         for c in range(data.shape[2]):
 
-            # UPS method
+            # Uniform Pixel Selection (UPS) method
             if self.method == 'UPS':
                 for i, (x, y) in enumerate(masked_indices):
                     x_inf = max(0, x - self.window // 2)
@@ -165,7 +215,7 @@ class LOADER():
                     y_pos = np.random.randint(y_inf, high=y_sup+1)
                     masked_data[x, y, c] = data[x_pos, y_pos, c]
 
-            # G method
+            # Gaussian (G) method
             elif self.method == 'G':
                 random_noise = np.random.normal(0, 10, n_masked_pixels)
                 for i, (x, y) in enumerate(masked_indices):
@@ -180,17 +230,23 @@ class PROCESSER():
     Images processer.
     '''
 
-    def __init__(self, input_size):
+    def __init__(self, n_channels, input_size):
         '''
         Initialization function.
+
+        Arguments:
+            n_channels: int
+                - number of channels in images (3 for RGB; 1 for grayscale)
+            input_size: int
+                - size of patches
         '''
 
         # add from arguments
+        self.n_channels = n_channels
         self.input_size = input_size
 
-        # add data transforms
+        # define AUGMENTER for transforms
         self.augmenter = AUGMENTER(self.input_size)
-        self.process_transforms = self.augmenter.get_process_transforms()
 
     def split_image(self, image, slide, chop):
         '''
@@ -201,25 +257,32 @@ class PROCESSER():
                 - image to split for denoising
             slide: int
                 - sliding window over images (must be between 1 and input_size-4)
+            chop: int
+                - least amount of padding to add because of sliding window
 
         Returns:
             patches: torch.Tensor
                 - splitted image into patches as torch Tensor
-            pad_v1: int
-                - right vertical padding
-            pad_v2: int
-                - left vertical padding
-            pad_h1: int
-                - right horizontal padding
-            pad_h2: int
-                - left horizontal padding
+            pad_hl: int
+                - left padding
+            pad_hr: int
+                - right padding
+            pad_vt: int
+                - top padding
+            pad_vb: int
+                - bottom padding
         '''
 
-        # convert grayscale images to RGB (three-channel)
-        if image.mode == 'L':
-            image.convert('RGB')
+        # convert images
+        if self.n_channels == 3:
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
 
-        # compute image width and height
+        elif self.n_channels == 1:
+            if image.mode != 'L':
+                image = image.convert('L')
+
+        # compute image width and height, and define input_size
         width, height = image.size
         input_size = self.input_size
 
@@ -235,10 +298,11 @@ class PROCESSER():
         # define transforms
         denoise_transforms = self.augmenter.get_denoise_transforms((pad_hl, pad_hr, pad_vt, pad_vb))
 
-        # apply transforms
-        data = denoise_transforms(data)
+        # convert image to Tensor and apply transforms
+        data = torch.from_numpy(data.transpose((2, 0, 1))).contiguous().div(255)
+        data = denoise_transforms(data).float()
 
-        # unfold tensor
+        # unfold tensor into patches
         patches = data.unfold(1, self.input_size, slide).unfold(2, self.input_size, slide)
 
         # return padding and patches
@@ -257,16 +321,22 @@ class PROCESSER():
                 - denoised and processed image
         '''
 
-        # denormalise image
-        for c in range(3):
-            data[c, :, :] = ([0.229, 0.224, 0.225][c] * data[c, :, :]) + [0.485, 0.456, 0.406][c]
+        # define array to populate output image
+        output = np.zeros(data.shape, dtype=int)
 
-        # convert to numpu array
-        data = np.clip((data * 255).cpu().detach().numpy(), a_min=0, a_max=255).astype('uint8')
-        data = np.transpose(data, (1,2,0))
+        # denormalise image
+        for c in range(self.n_channels):
+            data[c, :, :] = (0.5 * data[c, :, :]) + 0.5
+            output[c, :, :] = np.clip((data[c, :, :] * 255).cpu().detach().numpy(), a_min=0, a_max=255).astype('int')
+
+        # convert image to uint8
+        output = output.astype('uint8')
+
+        # convert to numpy array
+        output = np.transpose(output, (1,2,0))
 
         # convert to PIL image
-        image = Image.fromarray(data, 'RGB')
+        image = Image.fromarray(output, 'RGB')
 
         # return image
         return image

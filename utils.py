@@ -1,18 +1,33 @@
 #!/usr/bin/env python
 
-# os libraries
-import os
+# numerical and computer vision libraries
+import numpy as np
 
-def ignore_files(dir, files):
+def get_extensions():
     '''
+    Image extensions.
+    '''
+
+    extensions = ('.jpg', '.jpeg', '.png')
+
+    return extensions
+
+def PSNR(ground_truth_luminance, denoised_luminance):
+    '''
+    Function to compute the PSNR or an image.
+
     Arguments:
-        dir: str
-            - path to directory
-        files:
-            - list of paths to files
-
-    Returns:
-        _: list
-            - list of files to ignore
+        - ground_truth_luminance: np.array
+            luminance of RGB or grayscale image
+        - denoised_luminance: np.array
+            luminance of RGB or grayscale image
     '''
-    return set(f for f in files if os.path.isfile(os.path.join(dir, f)))
+
+    # compute MSE
+    MSE = np.mean(np.square(ground_truth_luminance - denoised_luminance))
+
+    # compute PSNR
+    PSNR_image = 20 * np.log10(255) - 10 * np.log10(MSE)
+
+    # return PSNR
+    return PSNR_image

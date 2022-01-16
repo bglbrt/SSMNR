@@ -1,2 +1,5 @@
+bm3d
+numpy
+matplotlib
 torch
 torchvision

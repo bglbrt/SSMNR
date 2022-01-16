@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-# os libraries
-import os
-
 # numerical and computer vision libraries
 import torchvision.transforms as transforms
 
@@ -14,17 +11,23 @@ class AUGMENTER():
     def __init__(self, input_size):
         '''
         Initialization function.
+
+        Arguments:
+            input_size: int
+                - size of patches
         '''
+
+        # add from arguments
         self.input_size = input_size
 
     def get_normalize_transforms(self):
         '''
+        Normalizer.
         '''
 
         # initialise transform
         normalize_transforms = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225])
+                    transforms.Normalize(mean = 0.5, std = 0.5)
                 ])
 
         # return transforms
@@ -32,6 +35,7 @@ class AUGMENTER():
 
     def get_train_transforms(self):
         '''
+        Train transforms.
         '''
 
         # initialise train transforms
@@ -46,6 +50,7 @@ class AUGMENTER():
 
     def get_validation_transforms(self):
         '''
+        Validation transforms.
         '''
 
         # initialise train transforms
@@ -56,18 +61,21 @@ class AUGMENTER():
         # return transforms
         return validation_transforms
 
-    def get_process_transforms(self):
-        '''
-        '''
-
-        # initialise process transforms
-        process_transforms = transforms.Compose([transforms.ToPILImage()])
-
-        # return transforms
-        return process_transforms
-
     def get_denoise_transforms(self, padding):
         '''
+        Denoise transforms.
+
+        Arguments:
+            padding: tuple
+                - (pad_hl, pad_hr, pad_vt, pad_vb) with:
+                    • pad_hl: int
+                        - left padding
+                    • pad_hr: int
+                        - right padding
+                    • pad_vt: int
+                        - top padding
+                    • pad_vb: int
+                        - bottom padding
         '''
 
         # load padding variables
@@ -75,9 +83,8 @@ class AUGMENTER():
 
         # initialise denoise transforms
         denoise_transforms = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                    transforms.Pad(padding=(pad_hl, pad_vt, pad_hr, pad_vb), padding_mode='edge')
+                    transforms.Normalize(mean=0.5, std=0.5),
+                    transforms.Pad(padding=(pad_hl, pad_vt, pad_hr, pad_vb), padding_mode='reflect')
                 ])
 
         # return transforms

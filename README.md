@@ -2,7 +2,7 @@
 
 Image denoising is the task of removing noise from an image, which can be formulated as the task of separating the noise signal from the meaningful information in images. Traditionally, this has been addressed both by spatial domain methods and transfer domain methods. However, from around 2016 onwards, image denoising techniques based on neural networks have started to outperfom these methods, with CNN-based denoisers obtaining impressive results.
 
-One limitation to the use of neural-network based denoisers in many applications is the need for extensive, labeled datasets containing both noised images, and ground-truth, noiseless images. In answer to this, multiple works have explored the use of semi-supervised approaches for noise removal, requiring either noised image pairs but no clean target images ([*Noise2Noise*](https://arxiv.org/abs/1803.04189)) or, more recently, no additional data than the noised image ([*Noise2Void*](https://arxiv.org/abs/1811.10980)). This project aims at studying these approaches for the task of noise removal, and re-implementing them in PyTorch.
+One limitation to the use of neural-network based denoisers in many applications is the need for extensive, labeled datasets containing both noised images, and ground-truth, noiseless images. In answer to this, multiple works have explored the use of semi-supervised approaches for noise removal, requiring either noised image pairs but no clean target images ([*Noise2Noise*](https://arxiv.org/abs/1803.04189)) or, more recently, no additional data than the noised image ([*Noise2Void*](https://arxiv.org/abs/1811.10980)). This project aims at studying these approaches, and re-implementing them in PyTorch.
 
 This repository contains our code for this task. This code is heavily based on both the original implementation of the *Noise2Void* [article](https://arxiv.org/abs/1811.10980) available [here](https://github.com/juglab/n2v), on other implementations and PyTorch/TensorFlow reproducibility challenges ([here](https://github.com/COMP6248-Reproducability-Challenge/selfsupervised-denoising) and [here](https://github.com/hanyoseob/pytorch-noise2void)), on the U-NET Transformer architecture available [here](https://github.com/HXLH50K/U-Net-Transformer/), as well as some base code from our teachers for a project on bird species recognition.
 
@@ -47,9 +47,9 @@ Available weights are:
   - `models/model_N2V_G35.pth`
   - `models/model_N2V_G50.pth`
 - weights for the N2VT (N2V with U-NET Transformer) model:
-  - `models/model_N2V_G5.pth` (please contact us to obtain weights)
-  - `models/model_N2V_G10.pth` (please contact us to obtain weights)
-  - `models/model_N2V_G25.pth` (please contact us to obtain weights)
+  - `models/model_N2V_G5.pth` -- please contact us to obtain weights
+  - `models/model_N2V_G10.pth` -- please contact us to obtain weights
+  - `models/model_N2V_G25.pth` -- please contact us to obtain weights
 
 Options available for denoising are:
 

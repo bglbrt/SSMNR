@@ -92,7 +92,8 @@ Evaluation methods include:
 - MEAN (5x5 mean filter)
 - MEDIAN (5x5 median filter)
 
-Provided pre-trained weights for N2V and N2VT are formatted as: "models/model_"+`model_name`+_+`noise_type`+`sigma`+".pth".
+Provided pre-trained weights for N2V and N2VT are formatted as:
+- "models/model_"+`model_name`+_+`noise_type`+`sigma`+".pth".
 
 Available weights are:
 - weights for the N2V model:

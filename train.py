@@ -116,6 +116,12 @@ class TRAINER():
                 - model with loaded weights
         '''
 
+        # check if model is evaluation model
+        if isinstance(model, str):
+
+            # return model
+            return model
+
         # create directory to save model weights
         if not os.path.isdir('models/'):
             os.makedirs('models/')
@@ -543,25 +549,31 @@ class TRAINER():
         # load weights
         model = self.load_weights(model)
 
-        # set model to eval function
-        model.eval()
+        # check if model is not BM3D, MEAN or MEDIAN and set model to eval function if not
+        if not isinstance(model, str):
+
+            model.eval()
 
         # check if self.images_path contains a single image or a directory of images
         if os.path.isfile(self.images_path):
             images_path = [self.images_path]
             ground_truth_images_path = [os.path.join('original', self.images_path)]
 
+            # create directory to save denoised images if necessary
+            if not os.path.isdir(os.path.join(os.path.dirname(self.images_path), self.model)):
+                os.makedirs(os.path.join(os.path.dirname(self.images_path), self.model))
+
         # check if self.images_path contains a single image or a directory of images
         elif os.path.isdir(self.images_path):
             images_path = [os.path.join(self.images_path, path) for path in os.listdir(self.images_path) if os.path.splitext(path)[-1] in self.image_extensions]
             ground_truth_images_path = [os.path.join(self.images_path, 'original', path) for path in os.listdir(self.images_path) if os.path.splitext(path)[-1] in self.image_extensions]
 
+            # create directory to save denoised images if necessary
+            if not os.path.isdir(os.path.join(self.images_path, self.model)):
+                os.makedirs(os.path.join(self.images_path, self.model))
+
         # initialise slide variable
         slide = self.slide
-
-        # create directory to save denoised images if necessary
-        if not os.path.isdir(os.path.join(self.images_path, self.model)):
-            os.makedirs(os.path.join(self.images_path, self.model))
 
         # print number of images to process
         print('Number of images found to process: %i \n' % len(images_path))
@@ -657,7 +669,12 @@ class TRAINER():
                 denoised_image= processer.process_image(data)
 
             # save image
-            output_path = os.path.join(self.images_path, self.model, os.path.basename(image_path))
+            if os.path.isfile(self.images_path):
+                output_path = os.path.join(os.path.dirname(self.images_path), self.model, os.path.basename(image_path))
+
+            elif os.path.isdir(self.images_path):
+                output_path = os.path.join(self.images_path, self.model, os.path.basename(image_path))
+
             denoised_image.save(output_path)
 
             # convert to YCbCr
